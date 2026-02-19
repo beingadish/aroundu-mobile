@@ -1,16 +1,74 @@
-# aroundu
+# AroundU Mobile
 
-AroundU Mobile Application
+Flutter mobile client for the AroundU local-services platform.
 
-## Getting Started
+## Architecture
+This project now follows **MVVM** with **Riverpod** state management.
 
-This project is a starting point for a Flutter application.
+- Full architecture doc: `docs/ARCHITECTURE.md`
+- Method-level reference: `docs/CODEBASE_METHODS.md`
 
-A few resources to get you started if this is your first Flutter project:
+## Tech
+- Flutter + Dart
+- Riverpod 2.x
+- HTTP (REST)
+- Material 3
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Runtime API Configuration
+Backend base URL is controlled via dart-define:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter run --dart-define=API_BASE_URL=http://localhost:20232
+```
+
+If `API_BASE_URL` is not provided, default is:
+
+```text
+Android emulator: http://10.0.2.2:20232
+iOS simulator: http://localhost:20232
+```
+
+For Android emulator, `localhost` points to the emulator itself, not your Mac.
+
+For Android physical devices, use your machine LAN IP, or use adb reverse and then:
+
+```bash
+adb reverse tcp:20232 tcp:20232
+flutter run --dart-define=API_BASE_URL=http://localhost:20232
+```
+
+## Debugging API Errors
+- In debug mode, API request/response logs are printed automatically.
+- To force logs in non-debug runs:
+
+```bash
+flutter run --dart-define=ENABLE_APP_LOGS=true
+```
+
+- Logs include:
+  - method + URL
+  - sanitized headers/body
+  - response status/body
+  - stack traces for failed requests
+
+## Device Persistence
+- Auth session is persisted on device and restored on app restart.
+- Worker selected skills and role tab selections are also persisted.
+- Theme preference (light/dark) is persisted and restored.
+
+## App Structure
+
+```text
+lib/
+  main.dart
+  app.dart
+  src/
+    core/
+    features/
+      auth/
+      jobs/
+```
+
+## Notes
+- Legacy non-MVVM codepaths were removed from `lib/`.
+- All business/application state is managed in Riverpod view models.
