@@ -1,26 +1,26 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+/// Centralised access to environment variables loaded from the bundled `.env`
+/// file via [flutter_dotenv].  Call [dotenv.load] in `main()` before accessing
+/// any of these values.
 class AppEnvironment {
-  static const String _apiBaseUrlOverride = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: '',
-  );
+  /// Google Maps API key — used for runtime Google services (geocoding, etc.).
+  /// The same key must also be in `android/local.properties` for native tile
+  /// rendering on Android.
+  static String get googleMapsApiKey =>
+      dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
 
-  /// API base URL resolution:
-  /// 1) explicit `API_BASE_URL` dart-define
-  /// 2) platform-aware local default (Android emulator -> 10.0.2.2)
+  /// Backend API base URL.
   static String get apiBaseUrl {
-    if (_apiBaseUrlOverride.isNotEmpty) {
-      return _apiBaseUrlOverride;
-    }
+    final androidBaseURL = dotenv.env['API_BASE_URL_ANDROID'] ?? '';
+    final commonBaseURL = dotenv.env['API_BASE_URL_OTHERS'] ?? '';
 
-    if (kIsWeb) {
-      return 'http://localhost:8080';
-    }
-
+    // Sensible fallback when .env is missing / key absent
+    if (kIsWeb) return commonBaseURL;
     return switch (defaultTargetPlatform) {
-      TargetPlatform.android => 'http://10.0.2.2:8080',
-      _ => 'http://localhost:8080',
+      TargetPlatform.android => androidBaseURL,
+      _ => commonBaseURL,
     };
   }
 }

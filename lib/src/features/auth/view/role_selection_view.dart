@@ -159,7 +159,7 @@ class _RoleCard extends StatelessWidget {
           ),
           color: selected
               ? AppPalette.primary.withValues(alpha: 0.08)
-              : AppPalette.surface,
+              : Theme.of(context).colorScheme.surface,
         ),
         child: Row(
           children: [
@@ -169,7 +169,7 @@ class _RoleCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: selected
                     ? AppPalette.primary.withValues(alpha: 0.16)
-                    : AppPalette.background,
+                    : Theme.of(context).scaffoldBackgroundColor,
                 shape: BoxShape.circle,
               ),
               child: Icon(

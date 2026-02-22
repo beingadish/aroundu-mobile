@@ -1,12 +1,12 @@
 import 'package:aroundu/src/core/network/api_client.dart';
 import 'package:aroundu/src/core/network/api_exception.dart';
+import 'package:aroundu/src/core/network/dio_client.dart';
 import 'package:aroundu/src/core/providers/core_providers.dart';
 import 'package:aroundu/src/core/storage/local_storage.dart';
 import 'package:aroundu/src/features/auth/data/auth_api.dart';
 import 'package:aroundu/src/features/auth/view_model/auth_view_model.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
 
 class FakeAuthApi extends AuthApi {
   FakeAuthApi({
@@ -16,8 +16,7 @@ class FakeAuthApi extends AuthApi {
     this.workerProfile = const UserProfileData(),
   }) : super(
          ApiClient(
-           baseUrl: 'http://localhost:20232',
-           httpClient: http.Client(),
+           dioClient: DioClient(baseUrl: 'http://localhost:20232'),
          ),
        );
 

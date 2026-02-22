@@ -8,6 +8,9 @@ import 'src/features/auth/view/onboarding_view.dart';
 import 'src/features/auth/view/register_view.dart';
 import 'src/features/auth/view/role_selection_view.dart';
 import 'src/features/auth/view/splash_view.dart';
+import 'src/features/chat/view/conversations_view.dart';
+import 'src/features/profile/view/profile_view.dart';
+import 'src/features/profile/view/edit_profile_view.dart';
 import 'src/features/jobs/view/provider_shell_view.dart';
 import 'src/features/jobs/view/worker_shell_view.dart';
 import 'src/features/jobs/view/admin_shell_view.dart';
@@ -21,6 +24,9 @@ class AppRoutes {
   static const String providerHome = '/provider';
   static const String workerHome = '/worker';
   static const String adminHome = '/admin';
+  static const String profile = '/profile';
+  static const String editProfile = '/profile/edit';
+  static const String conversations = '/conversations';
 }
 
 class AroundUApp extends ConsumerWidget {
@@ -45,6 +51,9 @@ class AroundUApp extends ConsumerWidget {
         AppRoutes.providerHome: (_) => const ProviderShellScreen(),
         AppRoutes.workerHome: (_) => const WorkerShellScreen(),
         AppRoutes.adminHome: (_) => const AdminShellScreen(),
+        AppRoutes.profile: (_) => const ProfileScreen(),
+        AppRoutes.editProfile: (_) => const EditProfileScreen(),
+        AppRoutes.conversations: (_) => const ConversationsScreen(),
       },
     );
   }

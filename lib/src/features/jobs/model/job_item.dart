@@ -2,17 +2,34 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 
-enum JobStatus { openForBids, inProgress, completed, cancelled }
+enum JobStatus {
+  openForBids,
+  bidAccepted,
+  readyToStart,
+  inProgress,
+  completedPendingPayment,
+  paymentReleased,
+  completed,
+  cancelled,
+}
 
 extension JobStatusView on JobStatus {
   String get label {
     switch (this) {
       case JobStatus.openForBids:
-        return 'Open For Bids';
+        return 'Open For Offers';
+      case JobStatus.bidAccepted:
+        return 'Offer Accepted';
+      case JobStatus.readyToStart:
+        return 'Ready to Start';
       case JobStatus.inProgress:
         return 'In Progress';
+      case JobStatus.completedPendingPayment:
+        return 'Pending Payment';
+      case JobStatus.paymentReleased:
+        return 'Payment Released';
       case JobStatus.completed:
-        return 'Completed';
+        return 'Task Completed';
       case JobStatus.cancelled:
         return 'Cancelled';
     }
@@ -22,14 +39,28 @@ extension JobStatusView on JobStatus {
     switch (this) {
       case JobStatus.openForBids:
         return AppPalette.primary;
+      case JobStatus.bidAccepted:
+      case JobStatus.readyToStart:
+        return AppPalette.primary;
       case JobStatus.inProgress:
         return AppPalette.warning;
+      case JobStatus.completedPendingPayment:
+        return AppPalette.warning;
+      case JobStatus.paymentReleased:
+        return AppPalette.success;
       case JobStatus.completed:
         return AppPalette.success;
       case JobStatus.cancelled:
         return AppPalette.danger;
     }
   }
+
+  /// Whether the job is in an active (non-terminal) state.
+  bool get isActive => this != JobStatus.completed && this != JobStatus.cancelled;
+
+  /// Whether the user can leave a review on this job.
+  bool get isReviewEligible =>
+      this == JobStatus.paymentReleased || this == JobStatus.completed;
 }
 
 class JobItem {

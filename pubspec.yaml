@@ -36,9 +36,13 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.6.1
   google_fonts: ^6.3.1
-  http: ^1.5.0
+  dio: ^5.7.0
+  image_picker: ^1.1.2
   intl: ^0.20.2
   shared_preferences: ^2.5.3
+  google_maps_flutter: ^2.5.0
+  flutter_dotenv: ^5.2.1
+  geolocator: ^13.0.0
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +68,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    - .env
     - assets/images/
     - assets/videos/
 

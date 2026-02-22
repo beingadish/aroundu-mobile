@@ -15,12 +15,23 @@ class NewJobInput {
     required this.description,
     required this.category,
     required this.budget,
+    this.skillNames = const <String>[],
+    this.jobUrgency = 'NORMAL',
+    this.paymentMode = 'OFFLINE',
+    this.overrideLocationId,
   });
 
   final String title;
   final String description;
   final String category;
   final double budget;
+  final List<String> skillNames;
+  /// Backend JobUrgency enum: NORMAL | MEDIUM | URGENT | SUPER_URGENT
+  final String jobUrgency;
+  /// Backend PaymentMode enum: OFFLINE | ESCROW
+  final String paymentMode;
+  /// When non-null, overrides the profile's currentAddressId as jobLocationId.
+  final int? overrideLocationId;
 }
 
 class PlaceBidInput {
@@ -154,13 +165,17 @@ class ApiJobRepository implements JobRepository {
     await _jobApi.createJob(
       token: _authState.token!,
       clientId: _authState.userId!,
-      jobLocationId: locationId,
+      jobLocationId: input.overrideLocationId ?? locationId,
       title: input.title.trim(),
       description: input.description.trim(),
       currency: _authState.currency,
       amount: input.budget,
-      skillIds: _skillIdsForCategory(input.category),
-      paymentMode: 'OFFLINE',
+      skillNames: input.skillNames.isNotEmpty ? input.skillNames : const <String>[],
+      skillIds: input.skillNames.isEmpty
+          ? _skillIdsForCategory(input.category)
+          : const <int>[],
+      jobUrgency: input.jobUrgency,
+      paymentMode: input.paymentMode,
     );
   }
 
@@ -453,10 +468,16 @@ class ApiJobRepository implements JobRepository {
 
   JobStatus _mapStatus(String value) {
     switch (value.toUpperCase()) {
-      case 'IN_PROGRESS':
-      case 'READY_TO_START':
       case 'BID_SELECTED_AWAITING_HANDSHAKE':
+        return JobStatus.bidAccepted;
+      case 'READY_TO_START':
+        return JobStatus.readyToStart;
+      case 'IN_PROGRESS':
         return JobStatus.inProgress;
+      case 'COMPLETED_PENDING_PAYMENT':
+        return JobStatus.completedPendingPayment;
+      case 'PAYMENT_RELEASED':
+        return JobStatus.paymentReleased;
       case 'COMPLETED':
         return JobStatus.completed;
       case 'CANCELLED':

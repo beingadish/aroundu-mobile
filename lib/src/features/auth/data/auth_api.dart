@@ -1,6 +1,54 @@
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 
+/// A location address returned from the backend.
+class AddressInfo {
+  const AddressInfo({
+    this.id,
+    this.fullAddress,
+    this.city,
+    this.area,
+    this.postalCode = '',
+    this.country = 'IN',
+    this.latitude,
+    this.longitude,
+  });
+
+  final int? id;
+  final String? fullAddress;
+  final String? city;
+  final String? area;
+  final String postalCode;
+  final String country;
+  final double? latitude;
+  final double? longitude;
+
+  String get displayName {
+    final parts = <String>[
+      if (area != null && area!.isNotEmpty) area!,
+      if (city != null && city!.isNotEmpty) city!,
+    ];
+    return parts.isNotEmpty
+        ? parts.join(', ')
+        : fullAddress ?? 'Unknown location';
+  }
+
+  Map<String, dynamic> toPayload({
+    String? postalCodeOverride,
+    String? countryOverride,
+  }) {
+    return <String, dynamic>{
+      'postalCode': postalCodeOverride ?? (postalCode.isNotEmpty ? postalCode : '000000'),
+      'country': countryOverride ?? (country.isNotEmpty ? country : 'IN'),
+      if (city != null && city!.isNotEmpty) 'city': city,
+      if (area != null && area!.isNotEmpty) 'area': area,
+      if (fullAddress != null && fullAddress!.isNotEmpty) 'fullAddress': fullAddress,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+    };
+  }
+}
+
 class LoginResult {
   const LoginResult({
     required this.userId,
@@ -22,6 +70,8 @@ class UserProfileData {
     this.email,
     this.phoneNumber,
     this.currentAddressId,
+    this.currentAddressFull,
+    this.savedAddresses = const <AddressInfo>[],
     this.skillIds = const <int>[],
     this.currency = 'INR',
     this.profileImageUrl,
@@ -36,6 +86,8 @@ class UserProfileData {
   final String? email;
   final String? phoneNumber;
   final int? currentAddressId;
+  final AddressInfo? currentAddressFull;
+  final List<AddressInfo> savedAddresses;
   final List<int> skillIds;
   final String currency;
   final String? profileImageUrl;
@@ -50,6 +102,8 @@ class UserProfileData {
     String? email,
     String? phoneNumber,
     int? currentAddressId,
+    AddressInfo? currentAddressFull,
+    List<AddressInfo>? savedAddresses,
     List<int>? skillIds,
     String? currency,
     String? profileImageUrl,
@@ -64,6 +118,8 @@ class UserProfileData {
       email: email ?? this.email,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       currentAddressId: currentAddressId ?? this.currentAddressId,
+      currentAddressFull: currentAddressFull ?? this.currentAddressFull,
+      savedAddresses: savedAddresses ?? this.savedAddresses,
       skillIds: skillIds ?? this.skillIds,
       currency: currency ?? this.currency,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
@@ -357,6 +413,25 @@ class AuthApi {
     _ensureSuccessEnvelope(response);
   }
 
+  /// Registers [address] under the client account by PATCHing the client
+  /// profile with it as `currentAddress`.  Returns the address back with its
+  /// backend-assigned ID so it can immediately be used as `jobLocationId`.
+  Future<AddressInfo> addAddress({
+    required String token,
+    required int clientId,
+    required AddressInfo address,
+  }) async {
+    final response = await _client.patchJson(
+      '/api/v1/client/update/$clientId',
+      bearerToken: token,
+      body: <String, dynamic>{
+        'currentAddress': address.toPayload(),
+      },
+    );
+    final profile = _mapProfile(_readDataMap(response));
+    return profile.currentAddressFull ?? address;
+  }
+
   Future<void> deleteWorker({
     required String token,
     required int workerId,
@@ -411,7 +486,7 @@ class AuthApi {
   }
 
   UserProfileData _mapProfile(Map<String, dynamic> data) {
-    final currentAddress = _asMap(data['currentAddress']);
+    final currentAddressRaw = _asMap(data['currentAddress']);
     final skills = data['skills'];
 
     final skillIds = <int>[];
@@ -426,12 +501,26 @@ class AuthApi {
       }
     }
 
+    final currentAddress = _mapAddress(currentAddressRaw);
+
+    final savedAddresses = <AddressInfo>[];
+    final savedRaw = data['savedAddresses'];
+    if (savedRaw is List) {
+      for (final item in savedRaw) {
+        if (item is Map<String, dynamic>) {
+          savedAddresses.add(_mapAddress(item));
+        }
+      }
+    }
+
     return UserProfileData(
       id: _asInt(data['id']),
       name: data['name']?.toString(),
       email: data['email']?.toString(),
       phoneNumber: data['phoneNumber']?.toString(),
-      currentAddressId: _asInt(currentAddress['id']),
+      currentAddressId: currentAddress.id,
+      currentAddressFull: currentAddress.id != null ? currentAddress : null,
+      savedAddresses: savedAddresses,
       skillIds: skillIds,
       currency: data['currency']?.toString() ?? 'INR',
       profileImageUrl: data['profileImageUrl']?.toString(),
@@ -439,6 +528,19 @@ class AuthApi {
       certifications: data['certifications']?.toString(),
       isOnDuty: _asBool(data['isOnDuty']),
       payoutAccount: data['payoutAccount']?.toString(),
+    );
+  }
+
+  AddressInfo _mapAddress(Map<String, dynamic> raw) {
+    return AddressInfo(
+      id: _asInt(raw['id'] ?? raw['addressId']),
+      fullAddress: raw['fullAddress']?.toString(),
+      city: raw['city']?.toString(),
+      area: raw['area']?.toString(),
+      postalCode: raw['postalCode']?.toString() ?? '',
+      country: raw['country']?.toString() ?? 'IN',
+      latitude: _asDouble(raw['latitude']),
+      longitude: _asDouble(raw['longitude']),
     );
   }
 
@@ -471,5 +573,11 @@ class AuthApi {
       return false;
     }
     return null;
+  }
+
+  double? _asDouble(Object? value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
   }
 }

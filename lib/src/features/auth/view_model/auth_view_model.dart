@@ -54,6 +54,8 @@ class AuthState {
     this.phoneNumber,
     this.profileImageUrl,
     this.currentAddressId,
+    this.currentAddressFull,
+    this.savedAddresses = const <AddressInfo>[],
     this.skillIds = const <int>[],
     this.currency = 'INR',
     this.experienceYears,
@@ -73,6 +75,8 @@ class AuthState {
   final String? phoneNumber;
   final String? profileImageUrl;
   final int? currentAddressId;
+  final AddressInfo? currentAddressFull;
+  final List<AddressInfo> savedAddresses;
   final List<int> skillIds;
   final String currency;
   final int? experienceYears;
@@ -96,6 +100,8 @@ class AuthState {
     String? phoneNumber,
     String? profileImageUrl,
     int? currentAddressId,
+    AddressInfo? currentAddressFull,
+    List<AddressInfo>? savedAddresses,
     List<int>? skillIds,
     String? currency,
     int? experienceYears,
@@ -120,6 +126,8 @@ class AuthState {
       phoneNumber: phoneNumber ?? this.phoneNumber,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       currentAddressId: currentAddressId ?? this.currentAddressId,
+      currentAddressFull: currentAddressFull ?? this.currentAddressFull,
+      savedAddresses: savedAddresses ?? this.savedAddresses,
       skillIds: skillIds ?? this.skillIds,
       currency: currency ?? this.currency,
       experienceYears: experienceYears ?? this.experienceYears,
@@ -219,6 +227,8 @@ class AuthController extends Notifier<AuthState> {
         phoneNumber: profile?.phoneNumber,
         profileImageUrl: profile?.profileImageUrl,
         currentAddressId: profile?.currentAddressId,
+        currentAddressFull: profile?.currentAddressFull,
+        savedAddresses: profile?.savedAddresses ?? const <AddressInfo>[],
         skillIds: profile?.skillIds ?? const <int>[],
         currency: profile?.currency ?? 'INR',
         experienceYears: profile?.experienceYears,
@@ -327,6 +337,8 @@ class AuthController extends Notifier<AuthState> {
         phoneNumber: profile.phoneNumber,
         profileImageUrl: profile.profileImageUrl,
         currentAddressId: profile.currentAddressId,
+        currentAddressFull: profile.currentAddressFull,
+        savedAddresses: profile.savedAddresses,
         skillIds: profile.skillIds,
         currency: profile.currency,
         experienceYears: profile.experienceYears,
@@ -390,6 +402,10 @@ class AuthController extends Notifier<AuthState> {
         phoneNumber: updated.phoneNumber ?? state.phoneNumber,
         profileImageUrl: updated.profileImageUrl ?? state.profileImageUrl,
         currentAddressId: updated.currentAddressId ?? state.currentAddressId,
+        currentAddressFull: updated.currentAddressFull ?? state.currentAddressFull,
+        savedAddresses: updated.savedAddresses.isNotEmpty
+            ? updated.savedAddresses
+            : state.savedAddresses,
         skillIds: updated.skillIds.isEmpty ? state.skillIds : updated.skillIds,
         currency: updated.currency,
         experienceYears: updated.experienceYears ?? state.experienceYears,

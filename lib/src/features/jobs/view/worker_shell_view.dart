@@ -1,26 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app.dart';
-import '../../auth/data/auth_api.dart';
 import '../../auth/view_model/auth_view_model.dart';
-import '../../../core/network/api_exception.dart';
-import '../../../core/theme/app_theme.dart';
-import '../../../core/view_model/theme_view_model.dart';
+import '../../chat/view/conversations_view.dart';
+import '../../profile/view/profile_view.dart';
 import '../../../core/widgets/app_notification.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../model/job_item.dart';
 import '../model/job_workflow_models.dart';
 import '../view_model/job_view_model.dart';
 import '../view_model/navigation_view_model.dart';
+import '../view_model/skill_suggest_view_model.dart';
 import '../view_model/worker_skills_view_model.dart';
 import 'widgets/job_card.dart';
 import 'widgets/job_shared_widgets.dart';
+import 'widgets/skill_suggest_field.dart';
 
 class WorkerShellScreen extends ConsumerWidget {
   const WorkerShellScreen({super.key});
 
-  static const List<String> _titles = ['Nearby Jobs', 'Skills', 'Account'];
+  static const List<String> _titles = [
+    'Task Feed',
+    'Skills',
+    'Messages',
+    'Profile',
+  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -33,7 +37,8 @@ class WorkerShellScreen extends ConsumerWidget {
         children: const [
           _WorkerFeedTab(),
           _WorkerSkillsTab(),
-          _WorkerAccountTab(),
+          ConversationsScreen(),
+          ProfileScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -53,9 +58,14 @@ class WorkerShellScreen extends ConsumerWidget {
             label: 'Skills',
           ),
           NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline_rounded),
+            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            label: 'Messages',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
             selectedIcon: Icon(Icons.person_rounded),
-            label: 'Account',
+            label: 'Profile',
           ),
         ],
       ),
@@ -187,18 +197,22 @@ class _WorkerFeedTab extends ConsumerWidget {
 class _WorkerSkillsTab extends ConsumerWidget {
   const _WorkerSkillsTab();
 
-  static const List<String> _skills = [
-    'Electrical',
-    'Plumbing',
-    'Carpentry',
-    'Painting',
-    'Cleaning',
-    'Mechanic',
-  ];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedSkills = ref.watch(workerSkillsProvider);
+    final suggestState = ref.watch(skillSuggestControllerProvider);
+
+    // When a skill is picked in the overlay, also add it to workerSkillsProvider
+    // We do this by watching suggested selections via a listener pattern on the
+    // overlay selection (the SkillSuggestField calls notifier.selectSkill).
+    // Use an inline sync via a post-frame callback to bridge the two providers.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final skill in suggestState.selected) {
+        ref
+            .read(workerSkillsProvider.notifier)
+            .toggleSkill(skill.skillName, true);
+      }
+    });
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -206,399 +220,58 @@ class _WorkerSkillsTab extends ConsumerWidget {
         Text('Your Skills', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 6),
         Text(
-          'These skills are saved locally for fast feed filtering.',
+          'Search and add skills. These are sent to the server to filter your job feed.',
           style: Theme.of(context).textTheme.bodyLarge,
         ),
         const SizedBox(height: 16),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _skills.map((skill) {
-            final active = selectedSkills.contains(skill);
-
-            return FilterChip(
-              label: Text(skill),
-              selected: active,
-              onSelected: (selected) {
-                ref
-                    .read(workerSkillsProvider.notifier)
-                    .toggleSkill(skill, selected);
-              },
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 16),
+        // ── Skill search ──
         Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
-            child: Text(
-              selectedSkills.isEmpty
-                  ? 'No skills selected. Add at least one to get relevant jobs.'
-                  : 'Selected ${selectedSkills.length} skill(s): ${selectedSkills.join(', ')}',
-              style: Theme.of(context).textTheme.bodyLarge,
+            child: SkillSuggestField(
+              controllerProvider: skillSuggestControllerProvider,
+              label: 'Add Skill',
+              hintText: 'Type to search skills…',
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        // ── Currently saved skills from workerSkillsProvider ──
+        if (selectedSkills.isNotEmpty) ...[
+          Text(
+            'Saved Skills (${selectedSkills.length})',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: selectedSkills.map((skill) {
+              return Chip(
+                label: Text(skill),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: () => ref
+                    .read(workerSkillsProvider.notifier)
+                    .toggleSkill(skill, false),
+              );
+            }).toList(),
+          ),
+        ] else
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(
+                'No skills added yet. Search above to add relevant skills.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
-class _WorkerAccountTab extends ConsumerWidget {
-  const _WorkerAccountTab();
-
-  Future<void> _logout(BuildContext context, WidgetRef ref) async {
-    await ref.read(authControllerProvider.notifier).logout();
-    await ref.read(workerTabIndexProvider.notifier).reset();
-    await ref.read(providerTabIndexProvider.notifier).reset();
-    await ref.read(adminTabIndexProvider.notifier).reset();
-
-    if (!context.mounted) {
-      return;
-    }
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      AppRoutes.login,
-      (route) => false,
-    );
-  }
-
-  Future<void> _openProfileEditor(BuildContext context, WidgetRef ref) async {
-    final authState = ref.read(authControllerProvider);
-    final nameController = TextEditingController(text: authState.name ?? '');
-    final emailController = TextEditingController(text: authState.email ?? '');
-    final phoneController = TextEditingController(
-      text: authState.phoneNumber ?? '',
-    );
-    final imageController = TextEditingController(
-      text: authState.profileImageUrl ?? '',
-    );
-    final experienceController = TextEditingController(
-      text: authState.experienceYears?.toString() ?? '',
-    );
-    final certController = TextEditingController(
-      text: authState.certifications ?? '',
-    );
-    final payoutController = TextEditingController(
-      text: authState.payoutAccount ?? '',
-    );
-
-    bool isOnDuty = authState.isOnDuty ?? true;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                8,
-                16,
-                MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Update Worker Profile',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        prefixIcon: Icon(Icons.person_outline_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.alternate_email_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: phoneController,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone',
-                        prefixIcon: Icon(Icons.call_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: imageController,
-                      decoration: const InputDecoration(
-                        labelText: 'Profile image URL',
-                        prefixIcon: Icon(Icons.image_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: experienceController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Experience (years)',
-                        prefixIcon: Icon(Icons.timeline_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: certController,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Certifications',
-                        alignLabelWithHint: true,
-                        prefixIcon: Icon(Icons.badge_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: payoutController,
-                      decoration: const InputDecoration(
-                        labelText: 'Payout account',
-                        prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SwitchListTile(
-                      value: isOnDuty,
-                      onChanged: (value) {
-                        setModalState(() {
-                          isOnDuty = value;
-                        });
-                      },
-                      title: const Text('On duty'),
-                      subtitle: const Text('Enable to receive job opportunities'),
-                    ),
-                    const SizedBox(height: 10),
-                    PrimaryButton(
-                      label: 'Save Changes',
-                      onPressed: () async {
-                        final success = await ref
-                            .read(authControllerProvider.notifier)
-                            .updateProfile(
-                              UserProfileUpdateInput(
-                                name: nameController.text,
-                                email: emailController.text,
-                                phoneNumber: phoneController.text,
-                                profileImageUrl: imageController.text,
-                                experienceYears:
-                                    int.tryParse(experienceController.text),
-                                certifications: certController.text,
-                                isOnDuty: isOnDuty,
-                                payoutAccount: payoutController.text,
-                              ),
-                            );
-
-                        if (!context.mounted) {
-                          return;
-                        }
-
-                        if (success) {
-                          Navigator.pop(context);
-                          AppNotifier.showSuccess(context, 'Profile updated');
-                        } else {
-                          final error =
-                              ref.read(authControllerProvider).errorMessage ??
-                              'Failed to update profile';
-                          AppNotifier.showError(context, error);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    nameController.dispose();
-    emailController.dispose();
-    phoneController.dispose();
-    imageController.dispose();
-    experienceController.dispose();
-    certController.dispose();
-    payoutController.dispose();
-  }
-
-  Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete account?'),
-          content: const Text(
-            'This permanently removes your worker account and history.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: FilledButton.styleFrom(backgroundColor: AppPalette.danger),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) {
-      return;
-    }
-
-    final success = await ref.read(authControllerProvider.notifier).deleteAccount();
-
-    if (!context.mounted) {
-      return;
-    }
-
-    if (success) {
-      AppNotifier.showSuccess(context, 'Account deleted');
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.login,
-        (route) => false,
-      );
-      return;
-    }
-
-    final error =
-        ref.read(authControllerProvider).errorMessage ??
-        'Unable to delete account';
-    AppNotifier.showError(context, error);
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authControllerProvider);
-    final isDarkMode = ref.watch(themeModeProvider) == ThemeMode.dark;
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Account', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 10),
-                AccountDetailRow(
-                  label: 'Name',
-                  value: authState.name ?? 'Not available',
-                ),
-                const SizedBox(height: 6),
-                AccountDetailRow(
-                  label: 'Email',
-                  value: authState.email ?? 'Not available',
-                ),
-                const SizedBox(height: 6),
-                AccountDetailRow(
-                  label: 'Role',
-                  value: 'Job Worker',
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: SwitchListTile(
-            title: const Text('Dark Mode'),
-            subtitle: const Text('Switch between light and dark themes'),
-            value: isDarkMode,
-            onChanged: (enabled) {
-              ref
-                  .read(themeModeProvider.notifier)
-                  .setThemeMode(enabled ? ThemeMode.dark : ThemeMode.light);
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.person_outline_rounded),
-                title: const Text('Profile update'),
-                subtitle: const Text('Update profile and public bio'),
-                onTap: () => _openProfileEditor(context, ref),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.sync_rounded),
-                title: const Text('Refresh profile'),
-                subtitle: const Text('Sync latest profile data from server'),
-                onTap: () async {
-                  final success = await ref
-                      .read(authControllerProvider.notifier)
-                      .refreshProfile();
-
-                  if (!context.mounted) {
-                    return;
-                  }
-
-                  if (success) {
-                    AppNotifier.showSuccess(context, 'Profile synced');
-                  } else {
-                    final error =
-                        ref.read(authControllerProvider).errorMessage ??
-                        'Unable to refresh profile';
-                    AppNotifier.showError(context, error);
-                  }
-                },
-              ),
-              const Divider(height: 1),
-              const ListTile(
-                leading: Icon(Icons.support_agent_rounded),
-                title: Text('Help center'),
-                subtitle: Text('Support and account assistance'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: () => _deleteAccount(context, ref),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppPalette.danger,
-            minimumSize: const Size.fromHeight(46),
-            side: const BorderSide(color: AppPalette.danger),
-          ),
-          icon: const Icon(Icons.delete_outline_rounded),
-          label: const Text('Delete account'),
-        ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: () async => _logout(context, ref),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppPalette.danger,
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(48),
-          ),
-          icon: const Icon(Icons.logout_rounded),
-          label: const Text('Logout'),
-        ),
-      ],
-    );
-  }
-}
+// _WorkerAccountTab removed – replaced by ProfileScreen in IndexedStack
 
 class _WorkerJobWorkflowSheet extends ConsumerStatefulWidget {
   const _WorkerJobWorkflowSheet({
@@ -614,7 +287,8 @@ class _WorkerJobWorkflowSheet extends ConsumerStatefulWidget {
       _WorkerJobWorkflowSheetState();
 }
 
-class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet> {
+class _WorkerJobWorkflowSheetState
+    extends ConsumerState<_WorkerJobWorkflowSheet> {
   JobItem? _job;
   List<BidItem> _bids = const <BidItem>[];
   bool _loading = true;
@@ -713,21 +387,23 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
   Future<void> _placeBid() {
     final amount = double.tryParse(_amountController.text.trim());
     if (amount == null || amount <= 0) {
-      AppNotifier.showWarning(context, 'Enter a valid bid amount');
+      AppNotifier.showWarning(context, 'Enter a valid offer amount');
       return Future<void>.value();
     }
 
     return _runAction(() async {
-      await ref.read(jobRepositoryProvider).placeBid(
-        PlaceBidInput(
-          jobId: widget.jobId,
-          amount: amount,
-          partnerName: _partnerNameController.text,
-          partnerFee: double.tryParse(_partnerFeeController.text.trim()),
-          notes: _notesController.text,
-        ),
-      );
-    }, successMessage: 'Bid submitted successfully');
+      await ref
+          .read(jobRepositoryProvider)
+          .placeBid(
+            PlaceBidInput(
+              jobId: widget.jobId,
+              amount: amount,
+              partnerName: _partnerNameController.text,
+              partnerFee: double.tryParse(_partnerFeeController.text.trim()),
+              notes: _notesController.text,
+            ),
+          );
+    }, successMessage: 'Offer submitted successfully');
   }
 
   Future<void> _respondHandshake(bool accepted, int bidId) {
@@ -749,7 +425,7 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
       await ref
           .read(jobRepositoryProvider)
           .verifyStartCode(jobId: widget.jobId, code: code);
-    }, successMessage: 'Start code verified. Job is now in progress.');
+    }, successMessage: 'Start code verified. Task is now in progress.');
   }
 
   BidItem? _myBid(AuthState authState) {
@@ -781,7 +457,7 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
         children: [
           const SizedBox(height: 120),
           Text(
-            'Unable to load job workflow',
+            'Unable to load task details',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium,
           ),
@@ -827,7 +503,9 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
             MetaPill(label: 'Budget: ${job.budget.toStringAsFixed(0)}'),
             MetaPill(label: 'Location: ${job.location}'),
             if (job.distanceKm != null)
-              MetaPill(label: 'Distance: ${job.distanceKm!.toStringAsFixed(1)} km'),
+              MetaPill(
+                label: 'Distance: ${job.distanceKm!.toStringAsFixed(1)} km',
+              ),
           ],
         ),
         const SizedBox(height: 14),
@@ -839,7 +517,10 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Your Bid', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Your Offer',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     'Amount: ${myBid.bidAmount.toStringAsFixed(0)}',
@@ -850,9 +531,13 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
                     'Status: ${myBid.status}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
-                  if (myBid.notes != null && myBid.notes!.trim().isNotEmpty) ...[
+                  if (myBid.notes != null &&
+                      myBid.notes!.trim().isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Text(myBid.notes!, style: Theme.of(context).textTheme.bodyMedium),
+                    Text(
+                      myBid.notes!,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ],
                 ],
               ),
@@ -861,7 +546,7 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
           const SizedBox(height: 10),
         ],
         if (canPlaceBid) ...[
-          Text('Place Bid', style: Theme.of(context).textTheme.titleMedium),
+          Text('Place Offer', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           Card(
             child: Padding(
@@ -874,7 +559,7 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
                       decimal: true,
                     ),
                     decoration: const InputDecoration(
-                      labelText: 'Bid amount',
+                      labelText: 'Offer amount',
                       prefixIcon: Icon(Icons.currency_rupee_rounded),
                     ),
                   ),
@@ -909,7 +594,7 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
                   ),
                   const SizedBox(height: 12),
                   PrimaryButton(
-                    label: 'Submit Bid',
+                    label: 'Submit Offer',
                     onPressed: _working ? null : _placeBid,
                   ),
                 ],
@@ -917,9 +602,11 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
             ),
           ),
         ],
-        if (canHandshake && myBid != null) ...[
-          Text('Client selected your bid',
-              style: Theme.of(context).textTheme.titleMedium),
+        if (canHandshake) ...[
+          Text(
+            'Client selected your offer',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -947,7 +634,10 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
           const SizedBox(height: 10),
         ],
         if (canVerifyStart) ...[
-          Text('Verify Start Code', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Verify Start Code',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: _startCodeController,
@@ -969,7 +659,7 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Text(
-                'Work is in progress. Wait for the client to verify release code and complete payment.',
+                'Work is in progress. Wait for the client to verify and release payment.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -978,45 +668,4 @@ class _WorkerJobWorkflowSheetState extends ConsumerState<_WorkerJobWorkflowSheet
       ],
     );
   }
-}
-
-void _showJobPreviewSheet(BuildContext context, JobItem job) {
-  showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (context) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(job.title, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 10),
-              Text(
-                job.description,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  MetaPill(label: 'Category: ${job.category}'),
-                  MetaPill(label: 'Location: ${job.location}'),
-                  MetaPill(label: 'Budget: ₹${job.budget.toStringAsFixed(0)}'),
-                  if (job.distanceKm != null)
-                    MetaPill(
-                      label:
-                          'Distance: ${job.distanceKm!.toStringAsFixed(1)} km',
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
 }

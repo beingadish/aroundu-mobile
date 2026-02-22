@@ -137,7 +137,8 @@ class JobApi {
     required String description,
     required String currency,
     required double amount,
-    required List<int> skillIds,
+    List<int> skillIds = const <int>[],
+    List<String> skillNames = const <String>[],
     String jobUrgency = 'NORMAL',
     String paymentMode = 'OFFLINE',
   }) async {
@@ -145,23 +146,31 @@ class JobApi {
         ? description
         : description.substring(0, 120);
 
+    final body = <String, dynamic>{
+      'title': title,
+      'shortDescription': shortDescription,
+      'longDescription': description,
+      'price': <String, dynamic>{
+        'currency': currency.toUpperCase(),
+        'amount': amount,
+      },
+      'jobLocationId': jobLocationId,
+      'jobUrgency': jobUrgency,
+      'paymentMode': paymentMode,
+    };
+
+    // Prefer skill names (auto-create on backend) over IDs
+    if (skillNames.isNotEmpty) {
+      body['requiredSkillNames'] = skillNames;
+    } else if (skillIds.isNotEmpty) {
+      body['requiredSkillIds'] = skillIds;
+    }
+
     final response = await _client.postJson(
       '/api/v1/jobs',
       bearerToken: token,
       query: <String, dynamic>{'clientId': clientId},
-      body: <String, dynamic>{
-        'title': title,
-        'shortDescription': shortDescription,
-        'longDescription': description,
-        'price': <String, dynamic>{
-          'currency': currency.toUpperCase(),
-          'amount': amount,
-        },
-        'jobLocationId': jobLocationId,
-        'jobUrgency': jobUrgency,
-        'requiredSkillIds': skillIds,
-        'paymentMode': paymentMode,
-      },
+      body: body,
     );
 
     return _readDataMap(response);
@@ -239,6 +248,23 @@ class JobApi {
     );
 
     _ensureSuccessEnvelope(response);
+  }
+
+  /// Worker updates job status (IN_PROGRESS or COMPLETED_PENDING_PAYMENT).
+  Future<Map<String, dynamic>> updateJobStatusByWorker({
+    required String token,
+    required int workerId,
+    required int jobId,
+    required String newStatus,
+  }) async {
+    final response = await _client.patchJson(
+      '/api/v1/jobs/$jobId/worker-status',
+      bearerToken: token,
+      query: <String, dynamic>{'workerId': workerId},
+      body: <String, dynamic>{'newStatus': newStatus},
+    );
+
+    return _readDataMap(response);
   }
 
   // ───────────────────────── Bids ─────────────────────────
@@ -351,6 +377,36 @@ class JobApi {
       bearerToken: token,
       query: <String, dynamic>{'clientId': clientId},
       body: <String, dynamic>{'code': code},
+    );
+
+    return _readMapPayload(response);
+  }
+
+  /// Regenerate OTP codes (invalidates old, creates new). Rate-limited to 1/min.
+  Future<Map<String, dynamic>> regenerateJobCodes({
+    required String token,
+    required int jobId,
+    required int clientId,
+  }) async {
+    final response = await _client.postAny(
+      '/api/v1/jobs/$jobId/otp/regenerate',
+      bearerToken: token,
+      query: <String, dynamic>{'clientId': clientId},
+    );
+
+    return _readMapPayload(response);
+  }
+
+  /// Worker cancels an accepted/in-progress job. Triggers cancellation penalty.
+  Future<Map<String, dynamic>> cancelJobByWorker({
+    required String token,
+    required int workerId,
+    required int jobId,
+  }) async {
+    final response = await _client.postAny(
+      '/api/v1/jobs/$jobId/worker-cancel',
+      bearerToken: token,
+      query: <String, dynamic>{'workerId': workerId},
     );
 
     return _readMapPayload(response);

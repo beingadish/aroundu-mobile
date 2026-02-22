@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,7 +16,8 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  final PageController _controller = PageController();
+  late final PageController _controller;
+  Timer? _autoScroll;
 
   static const List<_OnboardingSlide> _slides = [
     _OnboardingSlide(
@@ -37,10 +40,49 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     ),
   ];
 
+  // A large multiplier so we can start near the middle and scroll
+  // infinitely in both directions.
+  static const int _loopMultiplier = 1000;
+  static const int _realCount = 3; // _slides.length
+
+  int get _initialPage => (_loopMultiplier ~/ 2) * _realCount;
+
+  /// Maps the virtual page index produced by the infinite-loop PageView
+  /// back to a real [0, _realCount) index.
+  int _realIndex(int virtualPage) => virtualPage % _realCount;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(
+      initialPage: _initialPage,
+      viewportFraction: 0.88, // shows a sliver of the next card → gap visible
+    );
+    _startAutoScroll();
+  }
+
   @override
   void dispose() {
+    _autoScroll?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _startAutoScroll() {
+    _autoScroll = Timer.periodic(const Duration(milliseconds: 1000), (_) {
+      if (!mounted) return;
+      final next = (_controller.page?.round() ?? _initialPage) + 1;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  void _pauseAndResume() {
+    _autoScroll?.cancel();
+    _autoScroll = Timer(const Duration(seconds: 4), _startAutoScroll);
   }
 
   void _toLogin() {
@@ -48,49 +90,82 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   void _goNext() {
-    final currentPage = ref.read(onboardingPageProvider);
-    if (currentPage == _slides.length - 1) {
-      _toLogin();
-      return;
-    }
-
-    _controller.nextPage(
-      duration: const Duration(milliseconds: 280),
+    _pauseAndResume();
+    final current = _controller.page?.round() ?? _initialPage;
+    _controller.animateToPage(
+      current + 1,
+      duration: const Duration(milliseconds: 340),
       curve: Curves.easeOut,
     );
+
+    // Update dot indicator
+    final realIdx = _realIndex(current + 1);
+    ref.read(onboardingPageProvider.notifier).state = realIdx;
+
+    if (realIdx == _realCount - 1) {
+      // on last — next tap goes to login
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentPage = ref.watch(onboardingPageProvider);
-    final isLastPage = currentPage == _slides.length - 1;
+    final dotIndex = ref.watch(onboardingPageProvider);
 
     return Scaffold(
-      backgroundColor: AppPalette.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(onPressed: _toLogin, child: const Text('Skip')),
-                ],
-              ),
-              Expanded(
-                child: PageView.builder(
-                  controller: _controller,
-                  itemCount: _slides.length,
-                  onPageChanged: (index) {
-                    ref.read(onboardingPageProvider.notifier).state = index;
-                  },
-                  itemBuilder: (context, index) {
-                    return _OnboardingCard(slide: _slides[index]);
-                  },
+              // ── Skip ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: _toLogin, child: const Text('Skip')),
+                  ],
                 ),
               ),
-              const SizedBox(height: 18),
+
+              // ── Slides (infinite carousel) ──
+              Expanded(
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n is ScrollEndNotification) {
+                      final realIdx = _realIndex(_controller.page?.round() ?? 0);
+                      ref.read(onboardingPageProvider.notifier).state = realIdx;
+                    }
+                    return false;
+                  },
+                  child: PageView.builder(
+                    controller: _controller,
+                    itemCount: _loopMultiplier * _realCount,
+                    onPageChanged: (virtualIdx) {
+                      _pauseAndResume();
+                      ref.read(onboardingPageProvider.notifier).state =
+                          _realIndex(virtualIdx);
+                    },
+                    itemBuilder: (context, virtualIdx) {
+                      return Padding(
+                        // Gap between cards
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        child: _OnboardingCard(
+                          slide: _slides[_realIndex(virtualIdx)],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── Dot indicators ──
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
@@ -98,21 +173,27 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   (index) => AnimatedContainer(
                     duration: const Duration(milliseconds: 220),
                     margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: currentPage == index ? 24 : 8,
+                    width: dotIndex == index ? 24 : 8,
                     height: 8,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(999),
-                      color: currentPage == index
+                      color: dotIndex == index
                           ? AppPalette.primary
-                          : AppPalette.border,
+                          : Theme.of(context).colorScheme.outlineVariant,
                     ),
                   ),
                 ),
               ),
+
               const SizedBox(height: 18),
-              PrimaryButton(
-                label: isLastPage ? 'Get Started' : 'Next',
-                onPressed: _goNext,
+
+              // ── Buttons ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: PrimaryButton(
+                  label: dotIndex == _slides.length - 1 ? 'Get Started' : 'Next',
+                  onPressed: dotIndex == _slides.length - 1 ? _toLogin : _goNext,
+                ),
               ),
               const SizedBox(height: 8),
               TextButton(
@@ -121,6 +202,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 },
                 child: const Text('New here? Create account'),
               ),
+              const SizedBox(height: 4),
             ],
           ),
         ),
