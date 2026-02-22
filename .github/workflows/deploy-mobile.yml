@@ -1,0 +1,48 @@
+name: Mobile Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags, e.g., v1.0.0
+
+jobs:
+  build_and_release_apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to create a release
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17' # Flutter Android builds typically require Java 11/17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: |
+          cd aroundu-mobile
+          flutter pub get
+
+      - name: Build APK
+        run: |
+          cd aroundu-mobile
+          flutter build apk --release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: aroundu-mobile/build/app/outputs/flutter-apk/app-release.apk
+          name: Release ${{ github.ref_name }} (Mobile)
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
