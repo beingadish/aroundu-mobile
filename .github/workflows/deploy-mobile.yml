@@ -28,18 +28,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd aroundu-mobile
           flutter pub get
 
       - name: Build APK
         run: |
-          cd aroundu-mobile
           flutter build apk --release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: aroundu-mobile/build/app/outputs/flutter-apk/app-release.apk
+          files: build/app/outputs/flutter-apk/app-release.apk
           name: Release ${{ github.ref_name }} (Mobile)
           draft: false
           prerelease: false
